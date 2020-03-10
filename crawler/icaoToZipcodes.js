@@ -144,9 +144,8 @@ function getPostalCode(airport) {
                                 client
                                     .reverseGeocode({
                                         params: {
-                                            latlng: geocodeLat + "," + geocodeLng,
-                                            key: "AIzaSyD_XAr5aphInAPf9XrNcOC5rszHHyzStw4",
-                                            result_type: "postal_code"
+                                            latlng: geocodeLat + "," + geocodeLon,
+                                            key: "AIzaSyD_XAr5aphInAPf9XrNcOC5rszHHyzStw4"
                                         },
                                         timeout: 10000 // milliseconds
                                     })
