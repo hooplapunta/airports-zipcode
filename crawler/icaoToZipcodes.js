@@ -1,7 +1,9 @@
 const fs = require('fs');
 
 const throttledQueue = require('throttled-queue')
-let throttle = throttledQueue(10, 1000) // 10 times per second
+let queryThrottle = throttledQueue(30, 500) // 50 times per second
+let writeThrottle = throttledQueue(1, 20) // 1 times per 100 ms
+
 
 const Client = require("@googlemaps/google-maps-services-js").Client;
 
@@ -12,7 +14,7 @@ const client = new Client({});
 let airportsIcaoData = require('../data/airports.json');
 let airportsIcaoToZipcode = new Object();
 
-fs.appendFileSync('../data/airportsPostalCode.json', '{');
+fs.writeFileSync('../data/airportsPostalCode.json', '{');
 var stream = fs.createWriteStream("../data/airportsPostalCode.json", { flags: 'a' });
 stream.on('close', function () {
     fs.appendFileSync('../data/airportsPostalCode.json', '}');
@@ -22,14 +24,35 @@ var sep = "";
 
 // load our airport data
 for (const icao in airportsIcaoData) {
+    //var count = 0;
     if (airportsIcaoData.hasOwnProperty(icao)) {
         const airport = airportsIcaoData[icao];
 
-        throttle(function () {
+        queryThrottle(function () {
             getPostalCode(airport);
+
+            // count++;
+            // if (count > 30) {
+            //     process.exit();
+            // }
         });
     }
 }
+
+function writeToFile(data) {
+    writeThrottle(function () {
+        stream.write(sep + data);
+        if (!sep) sep = ",\n";
+
+        // count++;
+        // if (count > 30) {
+        //     process.exit();
+        // }
+    });
+
+    
+}
+
 
 function getPostalCode(airport) {
     // split here
@@ -44,7 +67,7 @@ function getPostalCode(airport) {
                 latlng: airport.lat + "," + airport.lon,
                 key: "AIzaSyD_XAr5aphInAPf9XrNcOC5rszHHyzStw4",
             },
-            timeout: 5000 // milliseconds
+            timeout: 10000 // milliseconds
         })
         .then(r => {
             //console.log(r.data);
@@ -60,22 +83,21 @@ function getPostalCode(airport) {
                     });
                 });
             } else {
-                console.log("ALERT: No results found for reverse geocode of " + icao + "'s latlon !");
+                console.log("ALERT: No results found for reverse geocode of " + airport.icao + "'s latlon !");
             }
 
             // check if we found a postal code from the reverse geocode
             if (foundPostalCode != "") {
                 // add the found postal code to our lookup list
                 var result = new Object();
-                result.icao = {
+                result[airport.icao] = {
                     zipcode: foundPostalCode,
                     foundLevel: foundLevel
                 };
 
                 var data = JSON.stringify(result);
-                data.slice(1, -1);
-                stream.write(sep + data);
-                if (!sep) sep = ",\n";
+                data = data.slice(1, -1);
+                writeToFile(data);
                 console.log(1);
             } else {
                 // we did not find a postal code
@@ -86,7 +108,7 @@ function getPostalCode(airport) {
                             address: airport.name,
                             key: "AIzaSyD_XAr5aphInAPf9XrNcOC5rszHHyzStw4",
                         },
-                        timeout: 5000 // milliseconds
+                        timeout: 10000 // milliseconds
                     })
                     .then(r => {
 
@@ -105,20 +127,19 @@ function getPostalCode(airport) {
                             if (foundPostalCode != "") {
                                 // add the found postal code to our lookup list
                                 var result = new Object();
-                                result.icao = {
+                                result[airport.icao] = {
                                     zipcode: foundPostalCode,
                                     foundLevel: foundLevel
                                 };
 
                                 var data = JSON.stringify(result);
-                                data.slice(1, -1);
-                                stream.write(sep + data);
-                                if (!sep) sep = ",\n";
+                                data = data.slice(1, -1);
+                                writeToFile(data);
                                 console.log(2);
                             } else {
                                 // last ditch effort to use the geocoded latlng to find a result
-                                geocodeLat = results[0].geometry.location.lat;
-                                geocodeLon = results[0].geometry.location.lon;
+                                geocodeLat = r.data.results[0].geometry.location.lat;
+                                geocodeLon = r.data.results[0].geometry.location.lon;
 
                                 client
                                     .reverseGeocode({
@@ -127,7 +148,7 @@ function getPostalCode(airport) {
                                             key: "AIzaSyD_XAr5aphInAPf9XrNcOC5rszHHyzStw4",
                                             result_type: "postal_code"
                                         },
-                                        timeout: 5000 // milliseconds
+                                        timeout: 10000 // milliseconds
                                     })
                                     .then(r => {
                                         if (r.data.status != "ZERO_RESULTS") {
@@ -143,15 +164,14 @@ function getPostalCode(airport) {
                                             if (foundPostalCode != "") {
                                                 // add the found postal code to our lookup list
                                                 var result = new Object();
-                                                result.icao = {
+                                                result[airport.icao] = {
                                                     zipcode: foundPostalCode,
                                                     foundLevel: foundLevel
                                                 };
 
                                                 var data = JSON.stringify(result);
-                                                data.slice(1, -1);
-                                                stream.write(sep + data);
-                                                if (!sep) sep = ",\n";
+                                                data = data.slice(1, -1);
+                                                writeToFile(data);
                                                 console.log(3);
                                             } else {
                                                 console.error("ERROR: No postal code found for " + airport.icao + "on all levels!");
